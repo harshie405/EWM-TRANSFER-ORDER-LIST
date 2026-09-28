@@ -1,0 +1,157 @@
+*----------------------------------------------------------------------*
+*Development ID : ZDDE-00102590                                        *
+*Functional Spec: ZFSE-00102589                                        *
+*Description:  Class for EWM transfer order list.This method is        *
+*              called through this interface ZEWM_SCWM_WO_PRINT        *
+*              of form ZEWM_SCWM_WO_MULTIPLE                           *
+*-----------------------------------------------------------------------
+*Change Log:                                                           *
+*----------------------------------------------------------------------*
+* Who       Date           CR            Text                          *
+* MITTAJH1 10-Oct-2025   1100276341   Initial Development              *
+*----------------------------------------------------------------------*
+  METHOD get_data.
+
+    CONSTANTS: lc_sign   TYPE char1    VALUE 'I',
+               lc_option TYPE char2    VALUE 'EQ',
+               lc_repid  TYPE progname VALUE 'ZEWM_CL_OPS_TRANSFER_ORD',
+               lc_const  TYPE zconst   VALUE 'PLANT/STORAGELOC'.
+
+    DATA: lr_adrnr  TYPE RANGE OF adrc-addrnumber.
+
+    CLEAR: es_source_addr,es_dest_addr.
+*fetching plant and storage location from zconstants_ops
+    SELECT repid,
+           const,
+           counter,
+           value
+           FROM zconstants_ops
+           WHERE repid = @lc_repid
+           AND const = @lc_const
+           ORDER BY PRIMARY KEY
+           INTO TABLE @DATA(lt_value).
+*fetch source address number and destination address number
+    SELECT  a~plant,
+            a~addressid AS source_address,
+            c~storagelocation AS lgort,
+            c~addressid AS dest_address
+        FROM i_plant AS a
+        INNER JOIN @lt_value AS b ON a~plant = substring( b~value, 1, 4 )
+        INNER JOIN i_storagelocationaddress AS c ON c~plant = a~plant
+                                                 AND c~storagelocation = substring( b~value, 6, 4 )
+       WHERE a~plant = substring( b~value, 1, 4 )
+       ORDER BY a~plant
+       INTO @DATA(ls_source)
+       UP TO 1 ROWS.
+    ENDSELECT.
+    IF sy-subrc EQ 0 .
+      APPEND VALUE #( sign   = lc_sign
+                      option = lc_option
+                      low    = ls_source-source_address ) TO lr_adrnr. "source address number
+      APPEND VALUE #( sign   = lc_sign
+                      option = lc_option
+                      low    = ls_source-dest_address ) TO lr_adrnr. "dest address number
+    ENDIF.
+*fetch  address details
+    IF lr_adrnr IS NOT INITIAL.
+      SELECT a~addrnumber,
+             a~name1,
+             a~street,
+             a~post_code1,
+             a~city1,
+             a~tel_number,
+             b~smtp_addr
+        FROM adrc AS a
+        LEFT OUTER JOIN adr6 AS b ON a~addrnumber = b~addrnumber
+        WHERE a~addrnumber IN @lr_adrnr
+        INTO TABLE @DATA(lt_adrc).
+      IF sy-subrc EQ 0.
+        DATA(ls_sourceaddress) = VALUE #( lt_adrc[ addrnumber = ls_source-source_address ] OPTIONAL ).
+        IF ls_sourceaddress IS NOT INITIAL.
+          es_source_addr =  VALUE #( name       = ls_sourceaddress-name1
+                                     city       = ls_sourceaddress-city1
+                                     street     = ls_sourceaddress-street
+                                     post_code1 = ls_sourceaddress-post_code1
+                                     tel1_numbr = ls_sourceaddress-tel_number
+                                     smtp_addr  = ls_sourceaddress-smtp_addr
+                                ).
+        ENDIF.
+        DATA(ls_destaddress) = VALUE #( lt_adrc[ addrnumber = ls_source-dest_address ] OPTIONAL ).
+        IF ls_destaddress IS NOT INITIAL.
+          es_dest_addr =  VALUE #( name       = ls_destaddress-name1
+                                   city       = ls_destaddress-city1
+                                   street  = ls_destaddress-street
+                                   post_code1 = ls_destaddress-post_code1
+                               ).
+        ENDIF.
+      ENDIF.
+    ENDIF.
+  ENDMETHOD.
+
+#FM-1
+
+FUNCTION zops_fm_transfer_ord .
+*"----------------------------------------------------------------------
+*"*"Local Interface:
+*"  IMPORTING
+*"     REFERENCE(IV_APPLICATION_LOG) TYPE  BALLOGHNDL
+*"     REFERENCE(IV_FORM) TYPE  FPNAME
+*"     REFERENCE(IS_WHO) TYPE  /SCWM/WHO
+*"     REFERENCE(IT_ORDIM_C) TYPE  /SCWM/TT_ORDIM_C
+*"     REFERENCE(IT_ORDIM_O) TYPE  /SCWM/TT_ORDIM_O
+*"     REFERENCE(IT_ORDIM_CS) TYPE  /SCWM/TT_ORDIM_CS
+*"     REFERENCE(IT_ORDIM_OS) TYPE  /SCWM/TT_ORDIM_OS
+*"     REFERENCE(IS_OUTPUT_PARAMS) TYPE  SFPOUTPUTPARAMS
+*"     REFERENCE(IS_DOC_PARAMS) TYPE  SFPDOCPARAMS
+*"     REFERENCE(IS_PRINT) TYPE  /SCWM/S_PRINT
+*"  EXPORTING
+*"     REFERENCE(ES_WHO) TYPE  /SCWM/WHO
+*"     REFERENCE(ET_ORIDM_O) TYPE  /SCWM/TT_ORDIM_O
+*"     REFERENCE(ET_ORDIM_C) TYPE  /SCWM/TT_ORDIM_C
+*"     REFERENCE(ET_ORDIM_CS) TYPE  /SCWM/TT_ORDIM_CS
+*"     REFERENCE(ET_HUHDR) TYPE  /SCWM/TT_HUHDR_INT
+*"     REFERENCE(ET_WO_INFO) TYPE  /SCWM/TT_WO_INFO
+*"     REFERENCE(EV_TSP) TYPE  /SCWM/DE_TSP
+*"     REFERENCE(EV_SCAC) TYPE  /SCWM/DE_RF_SCAC
+*"     REFERENCE(EV_PRINTED) TYPE  XFELD
+*"----------------------------------------------------------------------
+*----------------------------------------------------------------------*                                                                     *
+*Development ID:   ZDDE-00102590                                       *
+*Functional Spec:  ZFSE-00102589                                       *
+*Description:                                                          *
+*This FM is triggered via                                              *
+* Enhancementimplementation Z_SCWM_EX_PRNT_PDF_WO                      *
+* Class: ZCL_SCWM_EX_PRNT_PDF_WO                                       *
+* Method:/SCWM/IF_EX_PRNT_PDF_WO~GET_ADD_WO_DATA                       *
+* Include:ZI_GET_ADD_WO_DATA                                           *
+*-----------------------------------------------------------------------
+*Change Log:                                                           *
+*----------------------------------------------------------------------*
+* Who       Date           CR            Text                          *
+* MITTAJH1 10-Oct-2025   1100276341   Initial Development              *
+*----------------------------------------------------------------------*
+  DATA: lo_stock TYPE REF TO /scwm/cl_ui_stock_fields.
+
+  CONSTANTS: lc_e TYPE char1 VALUE 'E'.
+  CREATE OBJECT lo_stock.
+**Move standard BADI data to form structure data
+  es_who = is_who.
+  et_oridm_o = it_ordim_o.
+  et_ordim_c = it_ordim_c.
+  et_ordim_cs = it_ordim_cs.
+
+  IF et_oridm_o IS INITIAL.
+    MOVE-CORRESPONDING et_ordim_c TO et_oridm_o.
+  ENDIF.
+
+**Move details to ET_WO_INFO structure
+  TRY.
+      DELETE et_oridm_o WHERE matid IS INITIAL.
+      PERFORM tp11 IN PROGRAM /scwm/saplprinting IF FOUND USING is_doc_params
+                         et_oridm_o
+                CHANGING et_wo_info.
+    CATCH cx_root INTO DATA(e_text).
+      MESSAGE e_text->get_text( ) TYPE lc_e.
+  ENDTRY.
+
+ENDFUNCTION.
